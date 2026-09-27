@@ -27,11 +27,16 @@ The transcription is performed locally on your computer. Your audio files are no
 
 You need:
 
-* Linux
-* Python 3.10 or newer
-* `pipx`
+- Python 3.10 or newer
+- `pipx`
 
-The Whisper model is downloaded automatically the first time it is needed, so an Internet connection is required for the initial model download.
+`audio2text` should work on Linux, macOS and Windows.
+
+The project is primarily developed and tested on Linux. If you encounter
+platform-specific issues on macOS or Windows, please open an issue.
+
+The Whisper model is downloaded automatically the first time it is needed,
+so an Internet connection is required for the initial model download.
 
 After that, transcription itself is performed locally.
 
