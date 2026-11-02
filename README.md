@@ -400,6 +400,139 @@ Add timestamps if desired:
 audio2text -t *.ogg
 ```
 
+
+## Known Issues
+
+### CUDA: `libcublas.so.12` not found
+
+When running `audio2text` with NVIDIA GPU acceleration, you may encounter the following error:
+
+```text
+Library libcublas.so.12 is not found or cannot be loaded
+```
+
+This usually indicates that the CUDA libraries required by **CTranslate2** (the inference engine used by `faster-whisper`) are missing or cannot be found by the dynamic linker.
+
+For the currently tested configuration, CTranslate2 requires **CUDA 12 libraries and cuDNN 9**. Having CUDA 13 installed does not necessarily satisfy these requirements.
+
+#### 1. Install the required CUDA libraries
+
+If `audio2text` was installed using `pipx`, install the additional dependencies into its isolated Python environment:
+
+```bash
+pipx inject audio2text nvidia-cublas-cu12 'nvidia-cudnn-cu12==9.*'
+```
+
+This does not replace the system CUDA installation or NVIDIA driver.
+
+#### 2. Configure the library search path
+
+Locate the Python `site-packages` directory dynamically:
+
+```bash
+A2T_VENV="$HOME/.local/share/pipx/venvs/audio2text"
+
+A2T_SITE="$("$A2T_VENV/bin/python" -c \
+  'import sysconfig; print(sysconfig.get_path("purelib"))')"
+
+export LD_LIBRARY_PATH="$A2T_SITE/nvidia/cublas/lib:$A2T_SITE/nvidia/cudnn/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+```
+
+The `LD_LIBRARY_PATH` setting applies only to the current shell and processes launched from it.
+
+#### 3. Verify that the libraries can be loaded
+
+```bash
+"$A2T_VENV/bin/python" - <<'PY'
+import ctypes
+
+for library in (
+    "libcublas.so.12",
+    "libcublasLt.so.12",
+    "libcudnn.so.9",
+):
+    ctypes.CDLL(library)
+    print(f"{library}: OK")
+PY
+```
+
+All three libraries should report `OK`.
+
+#### 4. Test GPU transcription
+
+```bash
+audio2text --device cuda --compute-type float16 recording.mp3
+```
+
+On GPUs with limited VRAM, you can also try:
+
+```bash
+audio2text --device cuda --compute-type int8_float16 recording.mp3
+```
+
+The latter may reduce memory consumption and improve inference performance, depending on the GPU.
+
+#### 5. Optional: persist the configuration
+
+To avoid configuring `LD_LIBRARY_PATH` manually, you can add the commands from step 2 to your `~/.bashrc`.
+
+However, this affects other applications launched from the same shell and may cause conflicts with software using different CUDA versions.
+
+A safer approach is to create a dedicated wrapper:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+
+cat > "$HOME/.local/bin/audio2text-cuda" <<'EOF'
+#!/usr/bin/env bash
+set -e
+
+VENV="$HOME/.local/share/pipx/venvs/audio2text"
+SITE="$("$VENV/bin/python" -c \
+  'import sysconfig; print(sysconfig.get_path("purelib"))')"
+
+export LD_LIBRARY_PATH="$SITE/nvidia/cublas/lib:$SITE/nvidia/cudnn/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+exec "$VENV/bin/audio2text" --device cuda "$@"
+EOF
+
+chmod +x "$HOME/.local/bin/audio2text-cuda"
+```
+
+Then run:
+
+```bash
+audio2text-cuda --compute-type int8_float16 recording.mp3
+```
+
+This keeps CUDA-specific library paths isolated to the transcription process.
+
+### CUDA: driver version is insufficient
+
+Another possible error is:
+
+```text
+CUDA driver version is insufficient for CUDA runtime version
+```
+
+This indicates that the NVIDIA driver is missing, incompatible, or too old for the CUDA runtime being used.
+
+Check the installed driver:
+
+```bash
+nvidia-smi
+```
+
+If `nvidia-smi` is unavailable, verify that a compatible NVIDIA driver is installed. The CUDA toolkit alone is not sufficient for GPU inference.
+
+Alternatively, run transcription on the CPU:
+
+```bash
+audio2text --device cpu --compute-type int8 recording.mp3
+```
+
+**Note:** CUDA and cuDNN compatibility requirements depend on the installed CTranslate2 version. These instructions describe a tested CUDA 12 / cuDNN 9 setup and may need updating for future releases.
+
 ## Privacy
 
 Transcription is performed locally on your machine.
